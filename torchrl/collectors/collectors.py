@@ -637,6 +637,7 @@ class SyncDataCollector(DataCollectorBase):
         weight_updater: WeightUpdaterBase
         | Callable[[], WeightUpdaterBase]
         | None = None,
+        autocast: bool = False
         **kwargs,
     ):
         from torchrl.envs.batched_envs import BatchedEnvBase
@@ -903,6 +904,7 @@ class SyncDataCollector(DataCollectorBase):
             raise TypeError("weight_updater must be a subclass of WeightUpdaterBase")
 
         self.weight_updater = weight_updater
+        self.autocast = autocast
 
     @property
     def _traj_pool(self):
@@ -996,7 +998,9 @@ class SyncDataCollector(DataCollectorBase):
                 )  # to test if values have changed in-place
                 if self.compiled_policy:
                     cudagraph_mark_step_begin()
-                policy_output = self.policy(policy_input)
+
+                with torch.autocast(self.policy_device) if self.policy_device == "cuda" and self.autocast else contextlib.nullcontext():                
+                    policy_output = self.policy(policy_input)
 
                 # check that we don't have exclusive keys, because they don't appear in keys
                 def check_exclusive(val):
@@ -1435,7 +1439,10 @@ class SyncDataCollector(DataCollectorBase):
                     # we still do the assignment for security
                     if self.compiled_policy:
                         cudagraph_mark_step_begin()
-                    policy_output = self.policy(policy_input)
+
+                    with torch.autocast(self.policy_device) if self.policy_device == "cuda" and self.autocast else contextlib.nullcontext():                
+                        policy_output = self.policy(policy_input)
+
                     if self.compiled_policy:
                         policy_output = policy_output.clone()
                     if self._shuttle is not policy_output:
@@ -1910,6 +1917,7 @@ class _MultiDataCollector(DataCollectorBase):
         weight_updater: WeightUpdaterBase
         | Callable[[], WeightUpdaterBase]
         | None = None,
+        autocast: bool = False
     ):
         self.closed = True
         self.num_workers = len(create_env_fn)
@@ -2093,6 +2101,7 @@ class _MultiDataCollector(DataCollectorBase):
                 "cat_results can only be used with ``MultiSyncDataCollector``."
             )
         self.cat_results = cat_results
+        self.autocast = autocast
 
     def _check_replay_buffer_init(self):
         if self.replay_buffer is None:
@@ -3376,6 +3385,7 @@ class aSyncDataCollector(MultiaSyncDataCollector):
         num_threads: int | None = None,
         num_sub_threads: int = 1,
         set_truncated: bool = False,
+        autocast: bool = False,
         **kwargs,
     ):
         super().__init__(
@@ -3403,6 +3413,7 @@ class aSyncDataCollector(MultiaSyncDataCollector):
             num_threads=num_threads,
             num_sub_threads=num_sub_threads,
             set_truncated=set_truncated,
+            autocast=autocast,
             **kwargs,
         )
 
